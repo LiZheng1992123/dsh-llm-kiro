@@ -1,0 +1,6 @@
+# The dsh-llm-kiro bundle patch: activates the Kiro provider adapter as a
+# profile layer row over the profile root. The user's profile cordis.patch.yml
+# may address this row by id.
+- insert:
+    - id: llm-kiro
+      name: '@lizheng1992123/dsh-llm-kiro'
