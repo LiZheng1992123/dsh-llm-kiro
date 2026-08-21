@@ -1,5 +1,9 @@
 # dsh-llm-kiro
 
+[![DSH Plugin](https://img.shields.io/badge/DSH-Plugin-4D6BFE)](https://github.com/deepseek-ai/deepseek-harness)
+[![npm](https://img.shields.io/npm/v/@lizheng1992123/dsh-llm-kiro)](https://www.npmjs.com/package/@lizheng1992123/dsh-llm-kiro)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 将 DeepSeek Harness 的 LLM 接缝（`ctx.llm`）路由到本机 **Kiro CLI** 的适配器插件（`@lizheng1992123/dsh-llm-kiro`），基于 kiro-cli 自带的 [`acp`](https://kiro.dev/docs/cli/acp/) 子命令（Agent Client Protocol，JSON-RPC 2.0 over stdio）。
 
 它注册 `kiro` provider 路由，让 harness 的模型请求复用本机 `kiro-cli` 的登录态——**无需任何凭据或设置项**。模型目录从 kiro-cli 实时拉取。
@@ -15,6 +19,7 @@
 - **模型目录**：`kiro-cli chat --list-models --format json` 实时拉取（含 `context_window_tokens`），TTL 缓存 + 并发共享 + 超时保护，失败回退静态目录。
 - **思考档位**：每个模型广告 `low / medium / high / xhigh / max` 五档（kiro-cli `--effort`），选择后在会话重建时生效。
 - **旁路请求**：标题生成、compaction 等 side-channel 请求走冷启动一次性 ACP 会话，不占用 warm 会话，且复用主会话模型。
+- **代理自动接入**：`cliPath` 为默认值时自动探测已安装的 kiro-proxy 进程级代理包装器（`~/.local/bin/kiro-proxy`），插件派生的 kiro-cli 进程随之走代理，无需在宿主全局环境 export 任何代理变量。
 - **溢出可恢复**：内层报错文本经 dsh-llm 的 `isContextWindowExceededError` / `isQuotaExceededError` 分类为 `CONTEXT_WINDOW_EXCEEDED` / `QUOTA_EXCEEDED` 上报，harness 的溢出自动恢复（配合 `compaction-basic`）可以接管。
 
 ## 适配原理
@@ -95,7 +100,23 @@ dsh --profile <profile> --dump-config | grep llm-kiro   # 验证
 | --- | --- | --- | --- |
 | `maxSessions` | number | `8` | 同时保持 warm 的内层 kiro-cli 会话上限（超出按插入序 LRU 淘汰） |
 | `modelCacheTtlSeconds` | number | `300` | CLI 模型目录的缓存保鲜秒数 |
-| `cliPath` | string | `kiro-cli` | kiro-cli 可执行文件名或绝对路径 |
+| `cliPath` | string | `kiro-cli` | kiro-cli 可执行文件名或绝对路径。默认值会自动探测 kiro-proxy 包装器（见下节）；填真实 CLI 的绝对路径则强制直连 |
+
+## 代理（kiro-proxy 自动探测）
+
+插件通过 `spawn` / `execFile` 直接拉起 kiro-cli，不经过交互式 shell，因此 kiro-cli-proxy 项目注入 `~/.zshrc` 的 shell 函数对插件不生效。为此插件在 `cliPath` 保持默认值 `kiro-cli` 时按以下顺序解析实际启动的可执行文件：
+
+1. `~/.local/bin/kiro-proxy`（kiro-cli-proxy 的标准安装位置，存在且可执行则优先）；
+2. `PATH` 中的 `kiro-proxy`；
+3. 都没有则回退到裸 `kiro-cli`（直连）。
+
+探测到包装器时，插件 spawn 的每个 kiro-cli 进程（warm ACP 会话、模型目录拉取、side-channel 冷调用）都会经 `kiro-proxy` 注入 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`，代理配置的唯一事实来源仍是 `~/.kiro/settings/cli-proxy.json`——`kiro-proxy --proxy-off` / `--proxy-set` / `--proxy-bypass-add` 对插件同样生效。插件启动时会打一条日志说明命中的解析结果。
+
+注意两点：
+
+- **绕过方式**：显式把 `cliPath` 设为真实 CLI 的绝对路径（如 `~/.local/bin/kiro-cli`）即跳过包装器、强制直连。
+- **回环依赖 noProxy**：宿主工具经 `http://127.0.0.1:<port>` 的 loopback MCP server 桥接给内层模型，`cli-proxy.json` 的 `http.noProxy` 必须保留 `127.0.0.1` / `localhost`（默认即包含），否则工具桥会被代理掐断。
+- warm 会话是长驻进程，代理变量只在 spawn 时注入；改完 `cli-proxy.json` 后新会话生效，旧会话随 LRU 淘汰或重建后更新。
 
 ## 上下文管理与压缩
 
@@ -119,6 +140,7 @@ dsh --profile <profile> --dump-config | grep llm-kiro   # 验证
 | `src/acp.ts` | 极简 ACP JSON-RPC 2.0 stdio 客户端（跳过 stdout 混入的 Rust 日志行；应答 `session/request_permission`） |
 | `src/mcpserver.ts` | 每会话 loopback streamable-HTTP MCP server（JSON Schema 原样透传） |
 | `src/models.ts` | 实时模型目录拉取（TTL 缓存、并发共享、超时、静态回退） |
+| `src/clipath.ts` | CLI 可执行文件解析：`kiro-proxy` 包装器自动探测与直连回退 |
 | `src/catalog.ts` | 静态模型表（回退用） |
 | `src/render.ts` | 宿主消息 → 内层纯文本 feed |
 | `smoke.mjs` | 端到端冒烟测试（不依赖 harness，直接驱动 adapter） |
