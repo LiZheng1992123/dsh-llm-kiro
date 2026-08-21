@@ -16,6 +16,7 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import { AcpClient } from './acp.ts'
 import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, KIRO_MODELS, resolveKiroModelId } from './catalog.ts'
+import { type CliResolution, resolveKiroCliPath } from './clipath.ts'
 import { DEFAULT_MODEL_CACHE_TTL_MS, KiroModelCatalog } from './models.ts'
 import { renderInitialFeed, renderRefreshed, renderUserTurn } from './render.ts'
 import { classifyTurnError, KiroSession, KiroSessionManager } from './session.ts'
@@ -29,7 +30,12 @@ export interface KiroAdapterOptions {
   maxSessions?: number
   /** How long a fetched CLI model catalog stays fresh (default 5 min). */
   modelCacheTtlMs?: number
-  /** kiro-cli executable (default `kiro-cli`). */
+  /**
+   * kiro-cli executable (default `kiro-cli`). The bare default auto-detects an
+   * installed `kiro-proxy` wrapper so kiro-cli inherits its process-level
+   * proxy; any other value is used verbatim (set the real CLI's absolute path
+   * to force a direct connection).
+   */
   cliPath?: string
 }
 
@@ -64,12 +70,19 @@ export class KiroAdapter extends LlmAdapter {
   private readonly sessions: KiroSessionManager
   private readonly catalog: KiroModelCatalog
   private readonly cliPath: string
+  private readonly resolution: CliResolution
 
   constructor(options: KiroAdapterOptions = {}) {
     super()
-    this.cliPath = options.cliPath ?? 'kiro-cli'
+    this.resolution = resolveKiroCliPath(options.cliPath)
+    this.cliPath = this.resolution.cliPath
     this.sessions = new KiroSessionManager(options.maxSessions ?? 8, { cliPath: this.cliPath })
     this.catalog = new KiroModelCatalog(options.modelCacheTtlMs ?? DEFAULT_MODEL_CACHE_TTL_MS, this.cliPath)
+  }
+
+  /** How the spawned executable was chosen (explicit, proxy wrapper, or default). */
+  get cliResolution(): CliResolution {
+    return this.resolution
   }
 
   override providerInfo(provider: string): LlmProviderInfo {

@@ -18,6 +18,8 @@ export { KIRO_MODELS, resolveKiroModelId } from './catalog.ts'
 export { KiroModelCatalog } from './models.ts'
 export { AcpClient } from './acp.ts'
 export { HostMcpServer } from './mcpserver.ts'
+export { DEFAULT_CLI_PATH, detectKiroProxy, resolveKiroCliPath } from './clipath.ts'
+export type { CliResolution } from './clipath.ts'
 
 export const name = 'llm-kiro'
 export const inject = ['llm']
@@ -30,7 +32,12 @@ export interface Config {
   maxSessions?: number
   /** Seconds a fetched CLI model catalog stays fresh before re-fetching. */
   modelCacheTtlSeconds?: number
-  /** kiro-cli executable name or absolute path. */
+  /**
+   * kiro-cli executable name or absolute path. The default `kiro-cli`
+   * auto-detects an installed kiro-proxy wrapper (`~/.local/bin/kiro-proxy`)
+   * so the spawned CLI inherits its process-level proxy; set the real CLI's
+   * absolute path to bypass the wrapper.
+   */
   cliPath?: string
 }
 
@@ -46,6 +53,10 @@ export function apply(ctx: Context, config: Config): void {
     modelCacheTtlMs: (config.modelCacheTtlSeconds ?? 300) * 1000,
     cliPath: config.cliPath ?? 'kiro-cli',
   })
+  const resolution = adapter.cliResolution
+  if (resolution.source === 'proxy-wrapper') {
+    ctx.logger.info(`llm-kiro: detected kiro-proxy at ${resolution.cliPath}; spawned kiro-cli processes will use its proxy settings`)
+  }
   ctx.llm.registerAdapter([KIRO_PROVIDER], adapter)
   // Declare the route in the configurable-provider directory so selection
   // surfaces (the composer model seat, the Models settings page) render the
