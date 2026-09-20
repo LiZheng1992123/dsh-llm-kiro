@@ -30,6 +30,12 @@ describe('render', () => {
     expect(feed).toContain('[用户] hello')
     expect(feed).toContain('宿主对话记录')
   })
+  it('steers the inner model away from kiro native tools', () => {
+    const feed = renderInitialFeed(undefined, [])
+    expect(feed).toContain('mcp__dsh-host__')
+    expect(feed).toContain('webSearch')
+    expect(feed).toContain('User denied tool execution')
+  })
   it('renders user turns and refreshed messages', () => {
     expect(renderUserTurn([{ type: 'text', text: 'hi' }])).toBe('[用户] hi')
     expect(renderRefreshed(user('ctx'))).toContain('宿主原位刷新')

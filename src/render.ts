@@ -9,6 +9,12 @@
 
 import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
 
+/**
+ * Tool-name prefix kiro-cli gives the host bridge's MCP tools
+ * (`mcp__<server>__<tool>`); defined locally to avoid a session.ts import cycle.
+ */
+const MCP_TOOL_PREFIX = 'mcp__dsh-host__'
+
 /** Render one content-block list as plain text; non-text blocks get placeholders. */
 export function renderBlocks(blocks: readonly ContentBlock[]): string {
   const parts: string[] = []
@@ -42,6 +48,7 @@ export function renderMessage(message: Message): string {
 const BACKEND_ROLE = [
   '你在为一个编码 agent（宿主）充当 LLM API 后端：宿主把它的对话喂给你，你只输出"下一条助手回复"本身。',
   '宿主的工具已经通过 MCP 挂进来，需要用工具时直接调用，不要描述你会在别的环境里怎么调。',
+  `只允许调用名为 \`${MCP_TOOL_PREFIX}\` 前缀（即宿主桥接）的工具；你自己内置的工具（webSearch、webFetch、readFile、writeFile、editFile、bash、glob、grep、listDirectory 等）一律会被权限门自动拒绝（"User denied tool execution"），不要调用它们。宿主提示词里提到的工具名（如 web_search）指的是桥接工具，不是你的同名内置工具。`,
   '不要复述对话，不要解释你的角色。',
 ].join('\n')
 

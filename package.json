@@ -1,7 +1,7 @@
 {
   "name": "@lizheng1992123/dsh-llm-kiro",
   "description": "Kiro CLI (ACP) adapter for the DeepSeek Harness LLM seam",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
